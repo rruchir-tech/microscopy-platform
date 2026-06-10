@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import datetime as dt
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
