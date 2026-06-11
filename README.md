@@ -36,6 +36,19 @@ You get live progress, annotated overlays, and a ZIP with `results.csv`,
 For separate dev servers (hot reload), run `uvicorn` in `backend/` and
 `npm run dev` in `frontend/` instead.
 
+### Measurement correctness (ImageJ-comparable)
+
+Images are loaded at their **native bit depth** — 16-bit microscopy TIFFs are
+*not* downcast to 8-bit — and intensity (mean / max / sum / area per object) is
+measured on the raw pixel values, so a 16-bit image reporting a peak of 4000
+reads 4000, not a clipped 255. Detection follows ImageJ's standard route
+(auto-threshold → connected-component "Analyze Particles" with a minimum-size
+filter). Validated in `tests/test_image_correctness.py`, which recovers a known
+cell count and raw intensities from a synthetic 16-bit image.
+
+Still future: separating touching cells (watershed / CellPose) and
+multi-channel/proprietary formats (OME-TIFF, `.czi`, `.nd2`).
+
 ---
 
 ## Features

@@ -18,9 +18,23 @@ _MARKER = (255, 60, 60)  # red centroid dots
 
 
 def load_image(path: str | Path) -> np.ndarray:
-    """Load an image file into an (H, W) or (H, W, C) numpy array."""
+    """Load an image preserving its bit depth and channels.
+
+    Microscopy images are routinely 16-bit; downcasting to 8-bit would corrupt
+    the intensity values we measure. So we keep the native dtype (uint16/int32/
+    float) and only normalize modes numpy can't represent directly (palette,
+    alpha).
+    """
     with Image.open(path) as im:
-        im = im.convert("RGB") if im.mode not in ("L", "RGB") else im
+        mode = im.mode
+        if mode == "P":  # palette index -> RGB
+            return np.asarray(im.convert("RGB"))
+        if mode in ("RGBA", "LA"):  # drop alpha
+            return np.asarray(im.convert("RGB" if mode == "RGBA" else "L"))
+        if mode.startswith("I;16"):  # 16-bit grayscale (common for microscopy)
+            return np.asarray(im, dtype=np.uint16)
+        if mode == "I":  # 32-bit integer grayscale
+            return np.asarray(im, dtype=np.int32)
         return np.asarray(im)
 
 

@@ -86,29 +86,41 @@ def gaussian_blur(img: np.ndarray, kernel: int) -> np.ndarray:
 
 
 def otsu_threshold(gray: np.ndarray) -> float:
-    """Compute Otsu threshold on a 0-255 grayscale image (pure NumPy)."""
-    g = gray.astype(np.uint8) if gray.max() > 1 else (gray * 255).astype(np.uint8)
-    hist, _ = np.histogram(g, bins=256, range=(0, 256))
+    """Otsu threshold over the image's actual value range (pure NumPy).
+
+    Histograms across [min, max] with 256 bins, so it works correctly for 8-bit,
+    16-bit, and float images — matching ImageJ's default auto-threshold rather
+    than assuming a 0-255 range.
+    """
+    g = np.asarray(gray, dtype=np.float64).ravel()
+    mn = float(g.min())
+    mx = float(g.max())
+    if mx <= mn:
+        return mn
+
+    nbins = 256
+    hist, edges = np.histogram(g, bins=nbins, range=(mn, mx))
+    centers = (edges[:-1] + edges[1:]) / 2.0
     total = g.size
-    sum_total = np.dot(np.arange(256), hist)
+    sum_total = float(np.dot(centers, hist))
     sum_b = 0.0
     w_b = 0.0
     max_var = 0.0
-    threshold = 0.0
-    for t in range(256):
+    threshold = mn
+    for t in range(nbins):
         w_b += hist[t]
         if w_b == 0:
             continue
         w_f = total - w_b
         if w_f == 0:
             break
-        sum_b += t * hist[t]
+        sum_b += centers[t] * hist[t]
         m_b = sum_b / w_b
         m_f = (sum_total - sum_b) / w_f
         between = w_b * w_f * (m_b - m_f) ** 2
         if between > max_var:
             max_var = between
-            threshold = t
+            threshold = centers[t]
     return float(threshold)
 
 
@@ -246,8 +258,29 @@ def m_cell_detection(ctx: Context, params: dict) -> Context:
     if mask is None:
         gray = to_gray(ctx["image"])
         mask = gray > otsu_threshold(gray)
-    ctx["labels"] = connected_components(mask.astype(bool))
+    labels = connected_components(mask.astype(bool))
+    # ImageJ "Analyze Particles": drop objects below a minimum area to remove
+    # single-pixel noise. Default scales with the requested diameter if given.
+    min_size = params.get("min_size")
+    if min_size is None:
+        min_size = max(10, int(np.pi * (float(diameter) / 2) ** 2 * 0.1)) if diameter else 10
+    ctx["labels"] = filter_by_size(labels, int(min_size))
     return ctx
+
+
+def filter_by_size(labels: np.ndarray, min_size: int) -> np.ndarray:
+    """Zero out components smaller than ``min_size`` px and renumber the rest
+    contiguously (1..N), so the cell count reflects real objects."""
+    if min_size <= 1:
+        return labels
+    out = np.zeros_like(labels)
+    next_id = 0
+    for cid in (i for i in np.unique(labels) if i != 0):
+        sel = labels == cid
+        if int(sel.sum()) >= min_size:
+            next_id += 1
+            out[sel] = next_id
+    return out
 
 
 def _region_stats(labels: np.ndarray, intensity: np.ndarray) -> list[dict]:
