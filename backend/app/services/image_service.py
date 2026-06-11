@@ -127,6 +127,20 @@ def run_pipeline_on_image(image_path: str | Path, config: dict) -> dict[str, Any
     cells = ctx.get("cells", [])
     aggregate = ctx.get("aggregate", {})
     aggregate.setdefault("cell_count", len(cells))
+
+    # Confluence / % area coverage (ImageJ "Area Fraction").
+    labels = ctx.get("labels")
+    mask = ctx.get("mask")
+    covered = None
+    if labels is not None:
+        covered = int((labels > 0).sum())
+        total_px = int(labels.size)
+    elif mask is not None:
+        covered = int(np.asarray(mask).sum())
+        total_px = int(np.asarray(mask).size)
+    if covered is not None:
+        aggregate.setdefault("percent_area", round(100.0 * covered / total_px, 3))
+
     if cells:
         aggregate.setdefault(
             "mean_cell_intensity",

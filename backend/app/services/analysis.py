@@ -15,7 +15,8 @@ from PIL import Image
 # Features the MVP exposes as checkboxes.
 FEATURE_CELL_COUNT = "cell_count"
 FEATURE_INTENSITY = "intensity"
-SUPPORTED_FEATURES = {FEATURE_CELL_COUNT, FEATURE_INTENSITY}
+FEATURE_FOCI = "foci"
+SUPPORTED_FEATURES = {FEATURE_CELL_COUNT, FEATURE_INTENSITY, FEATURE_FOCI}
 
 _EXIF_DATETIME_ORIGINAL = 36867
 _EXIF_DATETIME = 306
@@ -40,7 +41,7 @@ def build_config(features: set[str], channel: str = "green") -> dict:
     edges = [("load", "prep"), ("prep", "thresh"), ("thresh", "detect")]
     last = "detect"
 
-    if features & {FEATURE_CELL_COUNT, FEATURE_INTENSITY}:
+    if features & {FEATURE_CELL_COUNT, FEATURE_INTENSITY, FEATURE_FOCI}:
         nodes.append(
             {
                 "id": "measure",
@@ -50,6 +51,11 @@ def build_config(features: set[str], channel: str = "green") -> dict:
         )
         edges.append((last, "measure"))
         last = "measure"
+
+    if FEATURE_FOCI in features:
+        nodes.append({"id": "foci", "type": "find_maxima", "params": {}})
+        edges.append((last, "foci"))
+        last = "foci"
 
     nodes.append(
         {

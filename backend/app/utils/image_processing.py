@@ -124,6 +124,104 @@ def otsu_threshold(gray: np.ndarray) -> float:
     return float(threshold)
 
 
+def _hist256(gray: np.ndarray):
+    """256-bin histogram + bin centers over the image's actual value range."""
+    g = np.asarray(gray, dtype=np.float64).ravel()
+    mn, mx = float(g.min()), float(g.max())
+    if mx <= mn:
+        return None, mn, mx
+    hist, edges = np.histogram(g, bins=256, range=(mn, mx))
+    centers = (edges[:-1] + edges[1:]) / 2.0
+    return (hist.astype(np.float64), centers), mn, mx
+
+
+def mean_threshold(gray: np.ndarray) -> float:
+    return float(np.asarray(gray, dtype=np.float64).mean())
+
+
+def isodata_threshold(gray: np.ndarray) -> float:
+    """ImageJ default "IsoData" (intermeans) — iterative midpoint of class means."""
+    packed, mn, mx = _hist256(gray)
+    if packed is None:
+        return mn
+    hist, centers = packed
+    t = float(centers[hist.argmax()])
+    for _ in range(100):
+        lo = centers <= t
+        hi = ~lo
+        wl, wh = hist[lo].sum(), hist[hi].sum()
+        if wl == 0 or wh == 0:
+            break
+        ml = (centers[lo] * hist[lo]).sum() / wl
+        mh = (centers[hi] * hist[hi]).sum() / wh
+        new_t = (ml + mh) / 2.0
+        if abs(new_t - t) < (mx - mn) / 512:
+            break
+        t = new_t
+    return float(t)
+
+
+def triangle_threshold(gray: np.ndarray) -> float:
+    """Triangle method: max distance from the histogram to the line joining the
+    peak and the far end."""
+    packed, mn, _ = _hist256(gray)
+    if packed is None:
+        return mn
+    hist, centers = packed
+    peak = int(hist.argmax())
+    far = 0 if (len(hist) - 1 - peak) > peak else len(hist) - 1
+    x0, y0 = peak, hist[peak]
+    x1, y1 = far, hist[far]
+    lo, hi = (min(peak, far), max(peak, far))
+    norm = np.hypot(y1 - y0, x1 - x0) or 1.0
+    best_d, best_i = -1.0, lo
+    for i in range(lo, hi + 1):
+        d = abs((y1 - y0) * i - (x1 - x0) * hist[i] + x1 * y0 - y1 * x0) / norm
+        if d > best_d:
+            best_d, best_i = d, i
+    return float(centers[best_i])
+
+
+_AUTO_THRESHOLDS = {
+    "otsu": otsu_threshold,
+    "mean": mean_threshold,
+    "isodata": isodata_threshold,
+    "triangle": triangle_threshold,
+}
+
+
+def _max_filter(img: np.ndarray, size: int) -> np.ndarray:
+    """Local maximum over a (size x size) window, same shape as input."""
+    from numpy.lib.stride_tricks import sliding_window_view
+
+    pad = size // 2
+    padded = np.pad(img, pad, mode="edge")
+    return sliding_window_view(padded, (size, size)).max(axis=(-1, -2))
+
+
+def find_maxima(
+    img: np.ndarray, min_distance: int = 3, noise_k: float = 3.0
+) -> np.ndarray:
+    """Find bright local maxima (foci/puncta), ImageJ "Find Maxima"-style.
+
+    A point qualifies if it is the maximum within ``min_distance`` and stands at
+    least ``noise_k`` standard deviations above the mean (the noise tolerance).
+    Returns an (N, 2) array of (y, x) coordinates."""
+    g = np.asarray(img, dtype=np.float64)
+    thr = g.mean() + noise_k * g.std()
+    size = max(3, 2 * int(min_distance) + 1)
+    peaks = (g == _max_filter(g, size)) & (g > thr)
+    if not peaks.any():
+        return np.empty((0, 2), dtype=int)
+    # collapse flat plateaus to one point per connected peak region
+    labels = connected_components(peaks)
+    coords = []
+    for cid in (i for i in np.unique(labels) if i != 0):
+        ys, xs = np.where(labels == cid)
+        coords.append((int(round(ys.mean())), int(round(xs.mean()))))
+    return np.array(coords, dtype=int)
+
+
 def connected_components(mask: np.ndarray) -> np.ndarray:
     """Label connected components (4-connectivity). Uses scipy/skimage when
     available, else an iterative flood-fill fallback."""
@@ -226,8 +324,9 @@ def m_thresholding(ctx: Context, params: dict) -> Context:
         # local mean threshold via blurred reference
         ref = gaussian_blur(gray, int(params.get("block_size", 15)))
         mask = gray > (ref - float(params.get("offset", 2)))
-    else:  # otsu
-        thr = otsu_threshold(gray)
+    else:  # a named global auto-threshold (otsu/mean/isodata/triangle)
+        fn = _AUTO_THRESHOLDS.get(method, otsu_threshold)
+        thr = fn(gray)
         mask = gray > thr
     ctx["mask"] = mask.astype(bool)
     return ctx
@@ -283,32 +382,89 @@ def filter_by_size(labels: np.ndarray, min_size: int) -> np.ndarray:
     return out
 
 
+def _perimeter(sub: np.ndarray) -> int:
+    """Boundary-pixel count of a cropped boolean region (4-connectivity)."""
+    padded = np.pad(sub, 1)
+    inner = padded[1:-1, 1:-1]
+    edge = inner & ~(
+        padded[:-2, 1:-1]
+        & padded[2:, 1:-1]
+        & padded[1:-1, :-2]
+        & padded[1:-1, 2:]
+    )
+    return int(edge.sum())
+
+
+def _feret_max(ys: np.ndarray, xs: np.ndarray) -> float:
+    """Maximum caliper (Feret) diameter: largest distance between two pixels.
+    Boundary points are sampled if numerous to keep it O(1) per cell."""
+    pts = np.column_stack([xs, ys]).astype(np.float64)
+    if len(pts) > 300:
+        idx = np.linspace(0, len(pts) - 1, 300).astype(int)
+        pts = pts[idx]
+    if len(pts) < 2:
+        return 1.0
+    d = np.sqrt(((pts[:, None, :] - pts[None, :, :]) ** 2).sum(-1))
+    return float(d.max())
+
+
+def _ellipse_descriptors(ys: np.ndarray, xs: np.ndarray, area: int) -> dict:
+    """Fitted-ellipse shape descriptors from second central moments
+    (ImageJ "Fit Ellipse": major/minor axes, aspect ratio, roundness)."""
+    cy, cx = ys.mean(), xs.mean()
+    mu20 = np.mean((xs - cx) ** 2)
+    mu02 = np.mean((ys - cy) ** 2)
+    mu11 = np.mean((xs - cx) * (ys - cy))
+    common = np.sqrt(max((mu20 - mu02) ** 2 + 4 * mu11**2, 0.0))
+    l1 = (mu20 + mu02 + common) / 2.0
+    l2 = max((mu20 + mu02 - common) / 2.0, 0.0)
+    major = 4.0 * np.sqrt(l1) if l1 > 0 else 1.0
+    minor = 4.0 * np.sqrt(l2) if l2 > 0 else 1.0
+    aspect = major / minor if minor > 0 else 1.0
+    roundness = 4.0 * area / (np.pi * major**2) if major > 0 else 0.0
+    return {
+        "major_axis": round(float(major), 3),
+        "minor_axis": round(float(minor), 3),
+        "aspect_ratio": round(float(aspect), 4),
+        "roundness": round(float(min(roundness, 1.0)), 4),
+    }
+
+
 def _region_stats(labels: np.ndarray, intensity: np.ndarray) -> list[dict]:
+    """Per-object measurements modeled on ImageJ's Results table: area, shape
+    descriptors, and intensity statistics."""
     cells = []
     ids = [i for i in np.unique(labels) if i != 0]
     for cid in ids:
         sel = labels == cid
-        vals = intensity[sel]
-        if vals.size == 0:
-            continue
         ys, xs = np.where(sel)
+        if ys.size == 0:
+            continue
+        y0, y1, x0, x1 = ys.min(), ys.max(), xs.min(), xs.max()
+        sub = sel[y0 : y1 + 1, x0 : x1 + 1]
+        vals = intensity[sel].astype(np.float64)
         area = int(vals.size)
-        # circularity proxy from bbox
-        bbox_h = ys.max() - ys.min() + 1
-        bbox_w = xs.max() - xs.min() + 1
-        circularity = float(area / (np.pi * (max(bbox_h, bbox_w) / 2) ** 2 + 1e-9))
-        cells.append(
-            {
-                "cell_id": int(cid),
-                "area": area,
-                "mean_intensity": float(vals.mean()),
-                "max_intensity": float(vals.max()),
-                "sum_intensity": float(vals.sum()),
-                "centroid_x": float(xs.mean()),
-                "centroid_y": float(ys.mean()),
-                "circularity": round(min(circularity, 1.0), 4),
-            }
-        )
+
+        perim = _perimeter(sub)
+        circularity = 4 * np.pi * area / (perim**2) if perim > 0 else 0.0
+
+        cell = {
+            "cell_id": int(cid),
+            "area": area,
+            "perimeter": perim,
+            "centroid_x": round(float(xs.mean()), 3),
+            "centroid_y": round(float(ys.mean()), 3),
+            "circularity": round(float(min(circularity, 1.0)), 4),
+            "feret_max": round(_feret_max(ys, xs), 3),
+            "mean_intensity": round(float(vals.mean()), 4),
+            "min_intensity": float(vals.min()),
+            "max_intensity": float(vals.max()),
+            "median_intensity": float(np.median(vals)),
+            "std_intensity": round(float(vals.std()), 4),
+            "sum_intensity": float(vals.sum()),  # RawIntDen
+        }
+        cell.update(_ellipse_descriptors(ys, xs, area))
+        cells.append(cell)
     return cells
 
 
@@ -404,6 +560,31 @@ def m_classification(ctx: Context, params: dict) -> Context:
     return ctx
 
 
+def m_find_maxima(ctx: Context, params: dict) -> Context:
+    """Count bright foci/puncta (ImageJ "Find Maxima"). Adds an image-level
+    ``puncta_count`` and, when cells exist, a per-cell ``foci_count``."""
+    original = ctx.get("original", ctx["image"])
+    gray = to_gray(original)
+    coords = find_maxima(
+        gray,
+        min_distance=int(params.get("min_distance", 3)),
+        noise_k=float(params.get("noise_k", 3.0)),
+    )
+    ctx.setdefault("aggregate", {})["puncta_count"] = int(len(coords))
+
+    labels = ctx.get("labels")
+    cells = ctx.get("cells")
+    if labels is not None and cells:
+        per_cell: dict[int, int] = {}
+        for y, x in coords:
+            cid = int(labels[y, x])
+            if cid:
+                per_cell[cid] = per_cell.get(cid, 0) + 1
+        for c in cells:
+            c["foci_count"] = per_cell.get(c["cell_id"], 0)
+    return ctx
+
+
 def m_export_results(ctx: Context, params: dict) -> Context:
     ctx["include_images"] = bool(params.get("include_images", False))
     ctx["exported"] = True
@@ -416,6 +597,7 @@ MODULE_FUNCS: dict[str, ModuleFn] = {
     "thresholding": m_thresholding,
     "cell_detection": m_cell_detection,
     "intensity_measurement": m_intensity_measurement,
+    "find_maxima": m_find_maxima,
     "colocalization": m_colocalization,
     "classification": m_classification,
     "export_results": m_export_results,
@@ -449,7 +631,7 @@ MODULE_REGISTRY: list[dict] = [
         "label": "Thresholding",
         "category": "transform",
         "params": [
-            {"name": "method", "type": "select", "options": ["otsu", "manual", "adaptive"], "default": "otsu"},
+            {"name": "method", "type": "select", "options": ["otsu", "isodata", "triangle", "mean", "manual", "adaptive"], "default": "otsu"},
             {"name": "threshold_value", "type": "slider", "min": 0, "max": 255, "step": 1, "default": 127},
         ],
     },
@@ -468,6 +650,15 @@ MODULE_REGISTRY: list[dict] = [
         "category": "analysis",
         "params": [
             {"name": "channel", "type": "select", "options": ["gray", "red", "green", "blue"], "default": "gray"},
+        ],
+    },
+    {
+        "type": "find_maxima",
+        "label": "Find Maxima (foci)",
+        "category": "analysis",
+        "params": [
+            {"name": "min_distance", "type": "number", "default": 3, "min": 1, "max": 50},
+            {"name": "noise_k", "type": "slider", "min": 0, "max": 10, "step": 0.5, "default": 3},
         ],
     },
     {

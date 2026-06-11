@@ -46,6 +46,16 @@ reads 4000, not a clipped 255. Detection follows ImageJ's standard route
 filter). Validated in `tests/test_image_correctness.py`, which recovers a known
 cell count and raw intensities from a synthetic 16-bit image.
 
+**ImageJ-style analyses available:**
+
+- **Morphometry** — area, perimeter, circularity, Feret diameter, fitted-ellipse
+  major/minor axes, aspect ratio, roundness.
+- **Intensity** — mean, min, max, median, std-dev, RawIntDen (sum) per object.
+- **Confluence** — % area coverage (Area Fraction).
+- **Auto-threshold methods** — Otsu, IsoData, Triangle, Mean (plus manual/adaptive).
+- **Foci / puncta** — Find Maxima count, image-wide and per cell (`foci_count`).
+- **Colocalization** — Pearson + Manders M1/M2 (two-channel).
+
 Still future: separating touching cells (watershed / CellPose) and
 multi-channel/proprietary formats (OME-TIFF, `.czi`, `.nd2`).
 
