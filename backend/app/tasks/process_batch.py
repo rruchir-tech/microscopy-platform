@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import datetime as dt
+import json
 import logging
 import zipfile
 from pathlib import Path
@@ -12,6 +13,7 @@ from ..celery_app import celery_app
 from ..config import get_settings
 from ..database import SessionLocal
 from ..models import BatchJob, Pipeline, ProcessingResult
+from ..services.analysis import capture_date
 from ..services.image_service import list_images, run_pipeline_on_image
 
 logger = logging.getLogger("process_batch")
@@ -50,6 +52,7 @@ def process_batch(self, job_id: str) -> dict:
 
         images = list_images(job.input_folder_path)
         all_rows: list[dict] = []
+        manifest: list[dict] = []
         processed = 0
         failed = 0
 
@@ -63,10 +66,20 @@ def process_batch(self, job_id: str) -> dict:
 
             try:
                 out = run_pipeline_on_image(image_path, pipeline.config)
+                # Auto-organize: tag every row with the image's capture date.
+                captured = capture_date(image_path)
+                out["aggregate"]["captured_date"] = captured
                 rows = out["rows"] or [{}]
                 for row in rows:
                     enriched = {"image_name": image_path.name, **out["aggregate"], **row}
                     all_rows.append(enriched)
+                manifest.append(
+                    {
+                        "image_name": image_path.name,
+                        "captured_date": captured,
+                        "cell_count": out["aggregate"].get("cell_count", 0),
+                    }
+                )
 
                 # Save the annotated overlay so users can see the segmentation.
                 processed_image_path = None
@@ -106,6 +119,23 @@ def process_batch(self, job_id: str) -> dict:
 
         csv_path = result_dir / "results.csv"
         _write_csv(csv_path, all_rows)
+
+        # Reproducibility manifest: params + per-image dates/counts, grouped.
+        by_date: dict[str, int] = {}
+        for m in manifest:
+            by_date[m["captured_date"]] = by_date.get(m["captured_date"], 0) + 1
+        metadata = {
+            "job_id": job.id,
+            "pipeline": pipeline.config,
+            "completed_at": _utcnow().isoformat(),
+            "num_processed": processed,
+            "num_failed": failed,
+            "images_by_date": by_date,
+            "images": manifest,
+        }
+        (result_dir / "metadata.json").write_text(
+            json.dumps(metadata, indent=2), encoding="utf-8"
+        )
 
         zip_path = result_dir / "results.zip"
         _write_zip(zip_path, csv_path)
@@ -149,9 +179,13 @@ def _write_csv(path: Path, rows: list[dict]) -> None:
 
 
 def _write_zip(zip_path: Path, csv_path: Path) -> None:
+    folder = csv_path.parent
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
         if csv_path.exists():
             zf.write(csv_path, csv_path.name)
-        # Include any annotated images saved alongside the CSV.
-        for img in csv_path.parent.glob("*.png"):
-            zf.write(img, img.name)
+        meta = folder / "metadata.json"
+        if meta.exists():
+            zf.write(meta, meta.name)
+        # Include annotated images under an annotated_images/ folder.
+        for img in folder.glob("*.png"):
+            zf.write(img, f"annotated_images/{img.name}")

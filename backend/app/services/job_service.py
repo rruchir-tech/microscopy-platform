@@ -41,6 +41,9 @@ def submit_job(
     from ..tasks.process_batch import process_batch
 
     process_batch.delay(job.id)
+    # In eager mode (local/demo) the task has already run and committed by now,
+    # so refresh to return the real status instead of the stale "queued".
+    db.refresh(job)
     return job
 
 

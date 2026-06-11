@@ -5,15 +5,24 @@ import shutil
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    UploadFile,
+    status,
+)
 from fastapi.responses import FileResponse, PlainTextResponse
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..dependencies import get_current_user, get_db
-from ..models import ProcessingResult, User
+from ..models import Pipeline, ProcessingResult, User
 from ..schemas import ImageSourceOut, JobCreate, JobOut, ResultOut
 from ..services import job_service
+from ..services.analysis import SUPPORTED_FEATURES, build_config
 from ..services.demo_data import DEFAULT_COUNT, generate_demo_images
 from ..utils.validators import is_image_file
 
@@ -27,6 +36,86 @@ def _user_input_dir(user: User, kind: str) -> Path:
     folder = Path(get_settings().upload_folder) / str(user.id) / kind / uuid4().hex
     folder.mkdir(parents=True, exist_ok=True)
     return folder
+
+
+def _save_uploads(files: list[UploadFile], folder: Path) -> int:
+    """Write supported image uploads into ``folder``; return how many were kept."""
+    saved = 0
+    for f in files:
+        if not f.filename or not is_image_file(f.filename):
+            continue
+        dest = folder / Path(f.filename).name  # strip paths (no traversal)
+        with dest.open("wb") as out:
+            shutil.copyfileobj(f.file, out)
+        saved += 1
+    return saved
+
+
+def _parse_features(features: str) -> set[str]:
+    selected = {f.strip() for f in features.split(",") if f.strip()} & SUPPORTED_FEATURES
+    return selected or {"cell_count"}
+
+
+def _start_analysis(
+    db: Session, user: User, folder: Path, features: set[str], name: str
+):
+    """Build a pipeline from features, persist it, and submit the batch job."""
+    pipeline = Pipeline(
+        user_id=user.id,
+        name=name or "Analysis",
+        description=f"MicroCount analysis ({', '.join(sorted(features))})",
+        config=build_config(features),
+    )
+    db.add(pipeline)
+    db.commit()
+    db.refresh(pipeline)
+    return job_service.submit_job(db, user, pipeline.id, str(folder))
+
+
+@router.post("/analyze", response_model=JobOut, status_code=status.HTTP_201_CREATED)
+async def analyze(
+    files: list[UploadFile] = File(...),
+    features: str = Form("cell_count,intensity"),
+    name: str = Form("Analysis"),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """MicroCount one-shot flow: upload images + pick features, get a running job.
+
+    Builds a pipeline from the selected features, saves it, and submits a batch
+    job over the uploaded images — no manual graph wiring needed.
+    """
+    if len(files) > _MAX_FILES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Too many files (max {_MAX_FILES})",
+        )
+    folder = _user_input_dir(user, "uploads")
+    if _save_uploads(files, folder) == 0:
+        shutil.rmtree(folder, ignore_errors=True)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No supported image files (png/jpg/tif/bmp)",
+        )
+    return _start_analysis(db, user, folder, _parse_features(features), name)
+
+
+@router.post(
+    "/analyze-demo", response_model=JobOut, status_code=status.HTTP_201_CREATED
+)
+def analyze_demo(
+    features: str = "cell_count,intensity",
+    count: int = DEFAULT_COUNT,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Generate demo images and run the same feature-based analysis over them."""
+    count = max(1, min(count, 24))
+    folder = _user_input_dir(user, "demo")
+    generate_demo_images(folder, count=count)
+    return _start_analysis(
+        db, user, folder, _parse_features(features), "Demo analysis"
+    )
 
 
 @router.post(
@@ -43,15 +132,7 @@ async def upload_images(
             detail=f"Too many files (max {_MAX_FILES})",
         )
     folder = _user_input_dir(user, "uploads")
-    saved = 0
-    for f in files:
-        if not f.filename or not is_image_file(f.filename):
-            continue
-        # strip any path components to avoid traversal
-        dest = folder / Path(f.filename).name
-        with dest.open("wb") as out:
-            shutil.copyfileobj(f.file, out)
-        saved += 1
+    saved = _save_uploads(files, folder)
     if saved == 0:
         shutil.rmtree(folder, ignore_errors=True)
         raise HTTPException(

@@ -10,6 +10,34 @@ per-cell metrics plus annotated images. No coding required.
 
 ---
 
+## Quick start (MicroCount, single server)
+
+The simplest path: one server runs the API **and** serves the built frontend.
+
+```bash
+# 1. install deps + build the frontend (writes frontend/dist)
+./start.sh build
+
+# 2. run it (http://localhost:8000)
+./start.sh                 # or: uvicorn backend.app.main:app --reload
+```
+
+Open <http://localhost:8000> and log in with the auto-seeded demo account:
+
+- **Email:** `demo@demo.com`  ·  **Password:** `demo12345`
+
+**The no-code flow ("New Analysis"):** drag-drop a folder of microscopy images →
+they're auto-organized by capture date (EXIF, falling back to file date) →
+tick what to measure (**cell count**, **fluorescence intensity**) → **Process**.
+You get live progress, annotated overlays, and a ZIP with `results.csv`,
+`metadata.json` (params + per-image dates for reproducibility), and
+`annotated_images/`. No images handy? Hit **Try with demo images**.
+
+For separate dev servers (hot reload), run `uvicorn` in `backend/` and
+`npm run dev` in `frontend/` instead.
+
+---
+
 ## Features
 
 - **Auth** — JWT access/refresh tokens, bcrypt password hashing.

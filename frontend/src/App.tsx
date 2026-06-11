@@ -4,6 +4,7 @@ import { AuthGuard } from "@/components/Shared/AuthGuard";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { JobDetailPage } from "@/pages/JobDetailPage";
 import { LoginPage } from "@/pages/LoginPage";
+import { NewAnalysisPage } from "@/pages/NewAnalysisPage";
 import { PipelineBuilderPage } from "@/pages/PipelineBuilderPage";
 import { ResultsPage } from "@/pages/ResultsPage";
 
@@ -25,6 +26,7 @@ export default function App() {
       <Route element={<AuthGuard />}>
         <Route element={<AppLayout />}>
           <Route index element={<DashboardPage />} />
+          <Route path="/analyze" element={<NewAnalysisPage />} />
           <Route path="/pipelines/new" element={<PipelineBuilderPage />} />
           <Route path="/pipelines/:id" element={<PipelineBuilderPage />} />
           <Route path="/jobs/:id" element={<JobDetailPage />} />

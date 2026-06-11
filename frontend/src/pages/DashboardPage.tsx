@@ -29,9 +29,14 @@ export function DashboardPage() {
             Build pipelines, run batch jobs, export results.
           </p>
         </div>
-        <Link to="/pipelines/new" className="btn-primary">
-          + New Pipeline
-        </Link>
+        <div className="flex gap-3">
+          <Link to="/pipelines/new" className="btn-secondary">
+            Advanced builder
+          </Link>
+          <Link to="/analyze" className="btn-primary">
+            + New Analysis
+          </Link>
+        </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">

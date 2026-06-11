@@ -40,6 +40,21 @@ def register_user(db: Session, data: UserRegister) -> User:
     return user
 
 
+def seed_demo_user(db: Session) -> None:
+    """Ensure a ready-to-use demo account exists (demo@demo.com / demo12345)."""
+    if db.query(User).filter(User.email == "demo@demo.com").first():
+        return
+    db.add(
+        User(
+            email="demo@demo.com",
+            username="demo",
+            password_hash=hash_password("demo12345"),
+            tier="free",
+        )
+    )
+    db.commit()
+
+
 def authenticate(db: Session, email: str, password: str) -> User:
     user = db.query(User).filter(User.email == email).first()
     if user is None or not verify_password(password, user.password_hash):

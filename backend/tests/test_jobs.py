@@ -124,6 +124,35 @@ def test_upload_images(auth_client):
     assert r.json()["num_images"] == 1
 
 
+def test_analyze_oneshot_flow(auth_client):
+    """Upload + feature checkboxes -> a completed, date-tagged analysis."""
+    import io
+
+    from PIL import Image
+
+    files = []
+    for i in range(3):
+        buf = io.BytesIO()
+        Image.new("RGB", (48, 48), (5, 90 + i, 5)).save(buf, format="PNG")
+        buf.seek(0)
+        files.append(("files", (f"cells_{i}.png", buf, "image/png")))
+
+    r = auth_client.post(
+        "/api/jobs/analyze",
+        data={"features": "cell_count,intensity", "name": "My run"},
+        files=files,
+    )
+    assert r.status_code == 201, r.text
+    job = r.json()
+    assert job["num_images"] == 3
+    assert job["status"] == "completed"
+
+    results = auth_client.get(f"/api/jobs/{job['id']}/results").json()
+    assert len(results) == 3
+    # every result carries an auto-organized capture date
+    assert all(r["metrics"]["aggregate"].get("captured_date") for r in results)
+
+
 def test_upload_rejects_non_image(auth_client):
     r = auth_client.post(
         "/api/jobs/upload",

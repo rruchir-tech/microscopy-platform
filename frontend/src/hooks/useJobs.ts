@@ -69,6 +69,41 @@ export function useDemoImages() {
   });
 }
 
+export function useAnalyze() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: {
+      files: File[];
+      features: string[];
+      name: string;
+    }) => {
+      const form = new FormData();
+      vars.files.forEach((f) => form.append("files", f));
+      form.append("features", vars.features.join(","));
+      form.append("name", vars.name);
+      return (
+        await api.post<Job>("/api/jobs/analyze", form, {
+          headers: { "Content-Type": "multipart/form-data" },
+        })
+      ).data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["jobs"] }),
+  });
+}
+
+export function useAnalyzeDemo() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (features: string[]) =>
+      (
+        await api.post<Job>(
+          `/api/jobs/analyze-demo?features=${features.join(",")}`,
+        )
+      ).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["jobs"] }),
+  });
+}
+
 export function useSubmitJob() {
   const qc = useQueryClient();
   return useMutation({
