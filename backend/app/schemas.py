@@ -134,6 +134,7 @@ class ResultOut(BaseModel):
     metrics: dict[str, Any]
     status: str
     error: str | None
+    has_image: bool = False
     processed_at: dt.datetime
 
 

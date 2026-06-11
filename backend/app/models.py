@@ -112,3 +112,7 @@ class ProcessingResult(Base):
     processed_at: Mapped[dt.datetime] = mapped_column(DateTime, default=_utcnow)
 
     job: Mapped["BatchJob"] = relationship(back_populates="results")
+
+    @property
+    def has_image(self) -> bool:
+        return bool(self.processed_image_path)

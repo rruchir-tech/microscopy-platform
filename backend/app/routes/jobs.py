@@ -115,6 +115,28 @@ def get_results(
     )
 
 
+@router.get("/{job_id}/results/{result_id}/image")
+def get_result_image(
+    job_id: str,
+    result_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Serve the annotated overlay PNG for one processed image."""
+    job = job_service.get_owned_job(db, user, job_id)
+    result = db.get(ProcessingResult, result_id)
+    if (
+        result is None
+        or result.job_id != job.id
+        or not result.processed_image_path
+    ):
+        raise HTTPException(status_code=404, detail="No image for this result")
+    path = Path(result.processed_image_path)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Image file missing")
+    return FileResponse(path, media_type="image/png")
+
+
 @router.get("/{job_id}/results.csv", response_class=PlainTextResponse)
 def get_results_csv(
     job_id: str,

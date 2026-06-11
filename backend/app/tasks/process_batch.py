@@ -67,11 +67,21 @@ def process_batch(self, job_id: str) -> dict:
                 for row in rows:
                     enriched = {"image_name": image_path.name, **out["aggregate"], **row}
                     all_rows.append(enriched)
+
+                # Save the annotated overlay so users can see the segmentation.
+                processed_image_path = None
+                overlay = out.get("overlay")
+                if overlay is not None:
+                    img_path = result_dir / f"{image_path.stem}_annotated.png"
+                    overlay.save(img_path)
+                    processed_image_path = str(img_path)
+
                 db.add(
                     ProcessingResult(
                         job_id=job.id,
                         image_filename=image_path.name,
                         metrics={"aggregate": out["aggregate"], "cells": out["rows"]},
+                        processed_image_path=processed_image_path,
                         status="success",
                     )
                 )

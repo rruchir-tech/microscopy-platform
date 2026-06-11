@@ -6,12 +6,15 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw
 
-from ..utils.image_processing import MODULE_FUNCS
+from ..utils.image_processing import MODULE_FUNCS, to_gray
 from ..utils.validators import is_image_file
 
 logger = logging.getLogger("image_service")
+
+_OUTLINE = (255, 230, 0)  # yellow cell outlines
+_MARKER = (255, 60, 60)  # red centroid dots
 
 
 def load_image(path: str | Path) -> np.ndarray:
@@ -19,6 +22,48 @@ def load_image(path: str | Path) -> np.ndarray:
     with Image.open(path) as im:
         im = im.convert("RGB") if im.mode not in ("L", "RGB") else im
         return np.asarray(im)
+
+
+def _to_rgb_uint8(arr: np.ndarray) -> np.ndarray:
+    """Coerce any image array to a contiguous (H, W, 3) uint8 array."""
+    a = np.asarray(arr)
+    if a.ndim == 2:
+        a = np.stack([a] * 3, axis=-1)
+    elif a.ndim == 3 and a.shape[2] >= 3:
+        a = a[..., :3]
+    else:
+        a = np.stack([to_gray(a)] * 3, axis=-1)
+    return np.ascontiguousarray(np.clip(a, 0, 255).astype(np.uint8))
+
+
+def render_overlay(
+    original: np.ndarray, labels: np.ndarray, cells: list[dict] | None = None
+) -> Image.Image:
+    """Draw detected-cell outlines (and centroid markers) over the original
+    image so users can see what was segmented, not just the numbers."""
+    rgb = _to_rgb_uint8(original)
+
+    # Boundary = pixels where the label differs from a 4-neighbour.
+    lab = np.asarray(labels)
+    boundary = np.zeros(lab.shape, dtype=bool)
+    boundary[:-1, :] |= lab[:-1, :] != lab[1:, :]
+    boundary[1:, :] |= lab[:-1, :] != lab[1:, :]
+    boundary[:, :-1] |= lab[:, :-1] != lab[:, 1:]
+    boundary[:, 1:] |= lab[:, :-1] != lab[:, 1:]
+    boundary &= lab > 0  # keep the cell side of each edge only
+
+    rgb[boundary] = _OUTLINE
+    img = Image.fromarray(rgb, mode="RGB")
+
+    # Mark centroids of the larger cells so dense fields stay readable.
+    if cells:
+        draw = ImageDraw.Draw(img)
+        for c in sorted(cells, key=lambda c: c.get("area", 0), reverse=True)[:60]:
+            x, y = c.get("centroid_x"), c.get("centroid_y")
+            if x is None or y is None:
+                continue
+            draw.ellipse([x - 2, y - 2, x + 2, y + 2], fill=_MARKER)
+    return img
 
 
 def topo_order(nodes: list[dict], edges: list[dict]) -> list[dict]:
@@ -77,10 +122,18 @@ def run_pipeline_on_image(image_path: str | Path, config: dict) -> dict[str, Any
             "total_area", int(sum(c["area"] for c in cells))
         )
 
+    overlay = None
+    if "labels" in ctx:
+        try:
+            overlay = render_overlay(ctx.get("original", img), ctx["labels"], cells)
+        except Exception:  # noqa: BLE001 - never fail a job over a preview image
+            logger.exception("overlay rendering failed")
+
     return {
         "rows": cells,
         "aggregate": aggregate,
         "include_images": ctx.get("include_images", False),
+        "overlay": overlay,
     }
 
 

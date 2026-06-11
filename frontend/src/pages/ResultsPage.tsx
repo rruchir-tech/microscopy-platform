@@ -11,6 +11,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { AuthImage } from "@/components/Shared/AuthImage";
 import { LoadingSpinner } from "@/components/Shared/LoadingSpinner";
 import { useJobResults } from "@/hooks/useJobs";
 import { api } from "@/services/api";
@@ -93,6 +94,25 @@ export function ResultsPage() {
     [rows],
   );
 
+  const gallery = useMemo(
+    () => (results ?? []).filter((r) => r.has_image),
+    [results],
+  );
+
+  // The download endpoint is JWT-protected, so a plain <a href> would 401.
+  // Fetch the ZIP with the auth header and save the blob instead.
+  const downloadZip = async () => {
+    const res = await api.get(`/api/jobs/${id}/download`, {
+      responseType: "blob",
+    });
+    const url = URL.createObjectURL(res.data);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `job-${id}-results.zip`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   if (isLoading) return <LoadingSpinner label="Loading results…" />;
 
   return (
@@ -100,17 +120,42 @@ export function ResultsPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Results</h1>
         <div className="flex gap-3">
-          <a
-            className="btn-secondary"
-            href={`${api.defaults.baseURL}/api/jobs/${id}/download`}
-          >
+          <button className="btn-secondary" onClick={downloadZip}>
             Download ZIP
-          </a>
+          </button>
           <Link to={`/jobs/${id}`} className="btn-secondary">
             Back to job
           </Link>
         </div>
       </div>
+
+      {gallery.length > 0 && (
+        <div className="card">
+          <h3 className="mb-3 font-semibold">
+            Annotated images{" "}
+            <span className="text-sm font-normal text-slate-400">
+              (yellow outlines = detected cells, red dots = centroids)
+            </span>
+          </h3>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+            {gallery.map((r) => (
+              <figure key={r.id} className="space-y-1">
+                <AuthImage
+                  path={`/api/jobs/${id}/results/${r.id}/image`}
+                  alt={`Annotated ${r.image_filename}`}
+                  className="w-full rounded-md border border-slate-200"
+                />
+                <figcaption className="truncate text-xs text-slate-500">
+                  {r.image_filename}
+                  {typeof r.metrics?.aggregate?.cell_count === "number" && (
+                    <> · {r.metrics.aggregate.cell_count} cells</>
+                  )}
+                </figcaption>
+              </figure>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="card">

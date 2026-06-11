@@ -94,6 +94,7 @@ export interface JobResult {
   };
   status: "success" | "failed";
   error: string | null;
+  has_image: boolean;
   processed_at: string;
 }
 

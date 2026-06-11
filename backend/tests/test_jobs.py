@@ -84,6 +84,30 @@ def test_demo_images_then_job(auth_client):
     assert detail.json()["num_processed"] == 4
 
 
+def test_annotated_image_served(auth_client):
+    """A processed image exposes has_image and serves an annotated PNG."""
+    folder = auth_client.post("/api/jobs/demo?count=2").json()["input_folder_path"]
+    pid = _make_pipeline(auth_client)
+    job = auth_client.post(
+        "/api/jobs", json={"pipeline_id": pid, "input_folder_path": folder}
+    ).json()
+
+    results = auth_client.get(f"/api/jobs/{job['id']}/results").json()
+    assert results and all(r["has_image"] for r in results)
+
+    rid = results[0]["id"]
+    img = auth_client.get(f"/api/jobs/{job['id']}/results/{rid}/image")
+    assert img.status_code == 200
+    assert img.headers["content-type"] == "image/png"
+    assert img.content[:8] == b"\x89PNG\r\n\x1a\n"
+
+    missing = auth_client.get(
+        f"/api/jobs/{job['id']}/results/"
+        "00000000-0000-0000-0000-000000000000/image"
+    )
+    assert missing.status_code == 404
+
+
 def test_upload_images(auth_client):
     import io
 
