@@ -13,7 +13,14 @@ const FEATURES = [
     label: "Fluorescence intensity",
     hint: "Per-cell mean / max / sum intensity",
   },
+  {
+    key: "foci",
+    label: "Foci / puncta count",
+    hint: "Count bright spots (Find Maxima), incl. foci per cell",
+  },
 ];
+
+const THRESHOLD_METHODS = ["otsu", "isodata", "triangle", "mean"];
 
 const IMAGE_EXT = /\.(png|jpe?g|tiff?|bmp)$/i;
 
@@ -27,6 +34,8 @@ export function NewAnalysisPage() {
     new Set(["cell_count", "intensity"]),
   );
   const [name, setName] = useState("Untitled Analysis");
+  const [thresholdMethod, setThresholdMethod] = useState("otsu");
+  const [separateTouching, setSeparateTouching] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -71,6 +80,8 @@ export function NewAnalysisPage() {
         files,
         features: [...selected],
         name,
+        thresholdMethod,
+        separateTouching,
       });
       navigate(`/jobs/${job.id}`);
     } catch (err) {
@@ -82,7 +93,11 @@ export function NewAnalysisPage() {
     setError(null);
     const feats = selected.size > 0 ? [...selected] : ["cell_count"];
     try {
-      const job = await demo.mutateAsync(feats);
+      const job = await demo.mutateAsync({
+        features: feats,
+        thresholdMethod,
+        separateTouching,
+      });
       navigate(`/jobs/${job.id}`);
     } catch (err) {
       handleError(err, "Could not start demo analysis");
@@ -175,6 +190,38 @@ export function NewAnalysisPage() {
               </span>
             </label>
           ))}
+        </div>
+
+        {/* Detection options */}
+        <div className="mt-4 grid gap-4 border-t border-slate-100 pt-4 sm:grid-cols-2">
+          <div>
+            <label className="label">Threshold method</label>
+            <select
+              className="input"
+              value={thresholdMethod}
+              onChange={(e) => setThresholdMethod(e.target.value)}
+            >
+              {THRESHOLD_METHODS.map((m) => (
+                <option key={m} value={m}>
+                  {m[0].toUpperCase() + m.slice(1)}
+                </option>
+              ))}
+            </select>
+          </div>
+          <label className="flex cursor-pointer items-start gap-3 self-end rounded-md p-2 hover:bg-slate-50">
+            <input
+              type="checkbox"
+              className="mt-1 h-4 w-4"
+              checked={separateTouching}
+              onChange={(e) => setSeparateTouching(e.target.checked)}
+            />
+            <span>
+              <span className="font-medium">Separate touching cells</span>
+              <span className="block text-xs text-slate-500">
+                Watershed split for clustered cells
+              </span>
+            </span>
+          </label>
         </div>
       </div>
 

@@ -22,7 +22,12 @@ _EXIF_DATETIME_ORIGINAL = 36867
 _EXIF_DATETIME = 306
 
 
-def build_config(features: set[str], channel: str = "green") -> dict:
+def build_config(
+    features: set[str],
+    channel: str = "green",
+    threshold_method: str = "otsu",
+    separate_touching: bool = False,
+) -> dict:
     """Assemble a pipeline graph from the selected features.
 
     Both cell counting and intensity rely on detection + per-region stats, so a
@@ -35,8 +40,16 @@ def build_config(features: set[str], channel: str = "green") -> dict:
             "type": "preprocessing",
             "params": {"blur_kernel": 3, "normalize": True},
         },
-        {"id": "thresh", "type": "thresholding", "params": {"method": "otsu"}},
-        {"id": "detect", "type": "cell_detection", "params": {"model_type": "cyto"}},
+        {
+            "id": "thresh",
+            "type": "thresholding",
+            "params": {"method": threshold_method},
+        },
+        {
+            "id": "detect",
+            "type": "cell_detection",
+            "params": {"model_type": "cyto", "watershed": separate_touching},
+        },
     ]
     edges = [("load", "prep"), ("prep", "thresh"), ("thresh", "detect")]
     last = "detect"

@@ -11,11 +11,13 @@ from app.services.analysis import build_config
 from app.services.image_service import load_image, run_pipeline_on_image
 from app.utils.image_processing import (
     _region_stats,
+    connected_components,
     find_maxima,
     isodata_threshold,
     mean_threshold,
     otsu_threshold,
     triangle_threshold,
+    watershed_split,
 )
 
 DISK_VALUE = 5000  # well outside 8-bit range -> proves no downcast
@@ -117,3 +119,20 @@ def test_find_maxima_counts_puncta():
         img += 2000 * np.exp(-(((yy - cy) ** 2 + (xx - cx) ** 2) / (2 * 4**2)))
     coords = find_maxima(img, min_distance=5, noise_k=2.0)
     assert len(coords) == len(spots)
+
+
+def test_watershed_splits_touching_cells():
+    """Two overlapping disks: plain labeling sees 1 blob, watershed sees 2."""
+    size = 100
+    yy, xx = np.mgrid[0:size, 0:size]
+    r = 20
+    d1 = (yy - 50) ** 2 + (xx - 38) ** 2 <= r**2
+    d2 = (yy - 50) ** 2 + (xx - 62) ** 2 <= r**2  # overlaps d1
+    mask = d1 | d2
+
+    plain = connected_components(mask)
+    assert plain.max() == 1  # merged into one object
+
+    split = watershed_split(mask, min_seed_distance=4)
+    n = len([i for i in np.unique(split) if i != 0])
+    assert n == 2  # separated back into two cells

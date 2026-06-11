@@ -357,7 +357,12 @@ def m_cell_detection(ctx: Context, params: dict) -> Context:
     if mask is None:
         gray = to_gray(ctx["image"])
         mask = gray > otsu_threshold(gray)
-    labels = connected_components(mask.astype(bool))
+    mask = mask.astype(bool)
+    # Optionally split touching cells (ImageJ "Watershed").
+    if params.get("watershed"):
+        labels = watershed_split(mask, int(params.get("min_seed_distance", 3)))
+    else:
+        labels = connected_components(mask)
     # ImageJ "Analyze Particles": drop objects below a minimum area to remove
     # single-pixel noise. Default scales with the requested diameter if given.
     min_size = params.get("min_size")
@@ -560,6 +565,80 @@ def m_classification(ctx: Context, params: dict) -> Context:
     return ctx
 
 
+def distance_transform(mask: np.ndarray) -> np.ndarray:
+    """Two-pass chamfer distance transform (distance to nearest background).
+    Pure NumPy; good enough to seed a watershed. O(H*W)."""
+    h, w = mask.shape
+    INF = 1e9
+    d = np.where(mask, INF, 0.0)
+    a, b = 1.0, np.sqrt(2.0)
+    for i in range(h):
+        row = d[i]
+        for j in range(w):
+            if not mask[i, j]:
+                continue
+            best = row[j]
+            if i > 0:
+                best = min(best, d[i - 1, j] + a)
+                if j > 0:
+                    best = min(best, d[i - 1, j - 1] + b)
+                if j < w - 1:
+                    best = min(best, d[i - 1, j + 1] + b)
+            if j > 0:
+                best = min(best, row[j - 1] + a)
+            row[j] = best
+    for i in range(h - 1, -1, -1):
+        row = d[i]
+        for j in range(w - 1, -1, -1):
+            if not mask[i, j]:
+                continue
+            best = row[j]
+            if i < h - 1:
+                best = min(best, d[i + 1, j] + a)
+                if j < w - 1:
+                    best = min(best, d[i + 1, j + 1] + b)
+                if j > 0:
+                    best = min(best, d[i + 1, j - 1] + b)
+            if j < w - 1:
+                best = min(best, row[j + 1] + a)
+            row[j] = best
+    return d
+
+
+def watershed_split(mask: np.ndarray, min_seed_distance: int = 3) -> np.ndarray:
+    """Marker-controlled watershed to separate touching objects.
+
+    Seeds are local maxima of the distance transform; basins grow from each seed
+    (highest distance first), so touching blobs split at their shared neck.
+    Falls back to plain labeling when there's nothing to split.
+    """
+    import heapq
+
+    mask = mask.astype(bool)
+    dist = distance_transform(mask)
+    size = max(3, 2 * int(min_seed_distance) + 1)
+    peaks = (dist == _max_filter(dist, size)) & (dist >= min_seed_distance)
+    markers = connected_components(peaks)
+    if markers.max() <= 1:
+        return connected_components(mask)
+
+    h, w = mask.shape
+    labels = markers.copy().astype(np.int32)
+    heap: list = []
+    ys, xs = np.where(markers > 0)
+    for y, x in zip(ys, xs):
+        heapq.heappush(heap, (-float(dist[y, x]), int(y), int(x)))
+    while heap:
+        _, y, x = heapq.heappop(heap)
+        lbl = labels[y, x]
+        for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            ny, nx = y + dy, x + dx
+            if 0 <= ny < h and 0 <= nx < w and mask[ny, nx] and labels[ny, nx] == 0:
+                labels[ny, nx] = lbl
+                heapq.heappush(heap, (-float(dist[ny, nx]), ny, nx))
+    return labels
+
+
 def m_find_maxima(ctx: Context, params: dict) -> Context:
     """Count bright foci/puncta (ImageJ "Find Maxima"). Adds an image-level
     ``puncta_count`` and, when cells exist, a per-cell ``foci_count``."""
@@ -642,6 +721,7 @@ MODULE_REGISTRY: list[dict] = [
         "params": [
             {"name": "model_type", "type": "select", "options": ["cyto", "nuclei", "custom"], "default": "cyto"},
             {"name": "diameter", "type": "number", "default": 15, "min": 1, "max": 200},
+            {"name": "watershed", "type": "boolean", "default": False},
         ],
     },
     {

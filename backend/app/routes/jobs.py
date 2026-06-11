@@ -57,14 +57,24 @@ def _parse_features(features: str) -> set[str]:
 
 
 def _start_analysis(
-    db: Session, user: User, folder: Path, features: set[str], name: str
+    db: Session,
+    user: User,
+    folder: Path,
+    features: set[str],
+    name: str,
+    threshold_method: str = "otsu",
+    separate_touching: bool = False,
 ):
     """Build a pipeline from features, persist it, and submit the batch job."""
     pipeline = Pipeline(
         user_id=user.id,
         name=name or "Analysis",
         description=f"MicroCount analysis ({', '.join(sorted(features))})",
-        config=build_config(features),
+        config=build_config(
+            features,
+            threshold_method=threshold_method,
+            separate_touching=separate_touching,
+        ),
     )
     db.add(pipeline)
     db.commit()
@@ -77,6 +87,8 @@ async def analyze(
     files: list[UploadFile] = File(...),
     features: str = Form("cell_count,intensity"),
     name: str = Form("Analysis"),
+    threshold_method: str = Form("otsu"),
+    separate_touching: bool = Form(False),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -97,7 +109,15 @@ async def analyze(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No supported image files (png/jpg/tif/bmp)",
         )
-    return _start_analysis(db, user, folder, _parse_features(features), name)
+    return _start_analysis(
+        db,
+        user,
+        folder,
+        _parse_features(features),
+        name,
+        threshold_method=threshold_method,
+        separate_touching=separate_touching,
+    )
 
 
 @router.post(
@@ -106,6 +126,8 @@ async def analyze(
 def analyze_demo(
     features: str = "cell_count,intensity",
     count: int = DEFAULT_COUNT,
+    threshold_method: str = "otsu",
+    separate_touching: bool = False,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -114,7 +136,13 @@ def analyze_demo(
     folder = _user_input_dir(user, "demo")
     generate_demo_images(folder, count=count)
     return _start_analysis(
-        db, user, folder, _parse_features(features), "Demo analysis"
+        db,
+        user,
+        folder,
+        _parse_features(features),
+        "Demo analysis",
+        threshold_method=threshold_method,
+        separate_touching=separate_touching,
     )
 
 

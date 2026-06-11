@@ -54,9 +54,11 @@ cell count and raw intensities from a synthetic 16-bit image.
 - **Confluence** — % area coverage (Area Fraction).
 - **Auto-threshold methods** — Otsu, IsoData, Triangle, Mean (plus manual/adaptive).
 - **Foci / puncta** — Find Maxima count, image-wide and per cell (`foci_count`).
+- **Watershed** — separate touching/clustered cells (distance-transform +
+  marker-controlled flooding); opt-in via "Separate touching cells".
 - **Colocalization** — Pearson + Manders M1/M2 (two-channel).
 
-Still future: separating touching cells (watershed / CellPose) and
+Still future: deep-learning segmentation (CellPose) for the hardest fields, and
 multi-channel/proprietary formats (OME-TIFF, `.czi`, `.nd2`).
 
 ---

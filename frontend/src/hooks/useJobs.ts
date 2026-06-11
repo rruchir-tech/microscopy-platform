@@ -69,18 +69,22 @@ export function useDemoImages() {
   });
 }
 
+export interface AnalysisOptions {
+  features: string[];
+  thresholdMethod: string;
+  separateTouching: boolean;
+}
+
 export function useAnalyze() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (vars: {
-      files: File[];
-      features: string[];
-      name: string;
-    }) => {
+    mutationFn: async (vars: AnalysisOptions & { files: File[]; name: string }) => {
       const form = new FormData();
       vars.files.forEach((f) => form.append("files", f));
       form.append("features", vars.features.join(","));
       form.append("name", vars.name);
+      form.append("threshold_method", vars.thresholdMethod);
+      form.append("separate_touching", String(vars.separateTouching));
       return (
         await api.post<Job>("/api/jobs/analyze", form, {
           headers: { "Content-Type": "multipart/form-data" },
@@ -94,12 +98,14 @@ export function useAnalyze() {
 export function useAnalyzeDemo() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (features: string[]) =>
-      (
-        await api.post<Job>(
-          `/api/jobs/analyze-demo?features=${features.join(",")}`,
-        )
-      ).data,
+    mutationFn: async (opts: AnalysisOptions) => {
+      const q = new URLSearchParams({
+        features: opts.features.join(","),
+        threshold_method: opts.thresholdMethod,
+        separate_touching: String(opts.separateTouching),
+      });
+      return (await api.post<Job>(`/api/jobs/analyze-demo?${q.toString()}`)).data;
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["jobs"] }),
   });
 }
