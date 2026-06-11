@@ -1,18 +1,78 @@
 """Batch-job routes."""
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
+from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse, PlainTextResponse
 from sqlalchemy.orm import Session
 
+from ..config import get_settings
 from ..dependencies import get_current_user, get_db
 from ..models import ProcessingResult, User
-from ..schemas import JobCreate, JobOut, ResultOut
+from ..schemas import ImageSourceOut, JobCreate, JobOut, ResultOut
 from ..services import job_service
+from ..services.demo_data import DEFAULT_COUNT, generate_demo_images
+from ..utils.validators import is_image_file
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
+
+_MAX_FILES = 200
+
+
+def _user_input_dir(user: User, kind: str) -> Path:
+    """A fresh per-user folder for one batch of input images."""
+    folder = Path(get_settings().upload_folder) / str(user.id) / kind / uuid4().hex
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
+@router.post(
+    "/upload", response_model=ImageSourceOut, status_code=status.HTTP_201_CREATED
+)
+async def upload_images(
+    files: list[UploadFile] = File(...),
+    user: User = Depends(get_current_user),
+):
+    """Accept a batch of image files and stage them server-side for a job."""
+    if len(files) > _MAX_FILES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Too many files (max {_MAX_FILES})",
+        )
+    folder = _user_input_dir(user, "uploads")
+    saved = 0
+    for f in files:
+        if not f.filename or not is_image_file(f.filename):
+            continue
+        # strip any path components to avoid traversal
+        dest = folder / Path(f.filename).name
+        with dest.open("wb") as out:
+            shutil.copyfileobj(f.file, out)
+        saved += 1
+    if saved == 0:
+        shutil.rmtree(folder, ignore_errors=True)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No supported image files in upload (png/jpg/tif/bmp)",
+        )
+    return ImageSourceOut(input_folder_path=str(folder), num_images=saved)
+
+
+@router.post(
+    "/demo", response_model=ImageSourceOut, status_code=status.HTTP_201_CREATED
+)
+def create_demo_images(
+    count: int = DEFAULT_COUNT,
+    user: User = Depends(get_current_user),
+):
+    """Generate synthetic fluorescence-cell images to try a pipeline end-to-end."""
+    count = max(1, min(count, 24))
+    folder = _user_input_dir(user, "demo")
+    paths = generate_demo_images(folder, count=count)
+    return ImageSourceOut(input_folder_path=str(folder), num_images=len(paths))
 
 
 @router.post("", response_model=JobOut, status_code=status.HTTP_201_CREATED)

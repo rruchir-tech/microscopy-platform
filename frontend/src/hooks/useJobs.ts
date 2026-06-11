@@ -43,6 +43,32 @@ export function useJobResults(id: string | undefined) {
   });
 }
 
+export interface ImageSource {
+  input_folder_path: string;
+  num_images: number;
+}
+
+export function useUploadImages() {
+  return useMutation({
+    mutationFn: async (files: File[]) => {
+      const form = new FormData();
+      files.forEach((f) => form.append("files", f));
+      return (
+        await api.post<ImageSource>("/api/jobs/upload", form, {
+          headers: { "Content-Type": "multipart/form-data" },
+        })
+      ).data;
+    },
+  });
+}
+
+export function useDemoImages() {
+  return useMutation<ImageSource, Error, number>({
+    mutationFn: async (count) =>
+      (await api.post<ImageSource>(`/api/jobs/demo?count=${count}`)).data,
+  });
+}
+
 export function useSubmitJob() {
   const qc = useQueryClient();
   return useMutation({

@@ -64,6 +64,50 @@ def test_job_not_found(auth_client):
     assert auth_client.get("/api/jobs/00000000-0000-0000-0000-000000000000").status_code == 404
 
 
+def test_demo_images_then_job(auth_client):
+    """Demo generator stages images that a real job can process end-to-end."""
+    src = auth_client.post("/api/jobs/demo?count=4")
+    assert src.status_code == 201, src.text
+    assert src.json()["num_images"] == 4
+    folder = src.json()["input_folder_path"]
+
+    pid = _make_pipeline(auth_client)
+    r = auth_client.post(
+        "/api/jobs", json={"pipeline_id": pid, "input_folder_path": folder}
+    )
+    assert r.status_code == 201, r.text
+    job = r.json()
+    assert job["num_images"] == 4
+
+    detail = auth_client.get(f"/api/jobs/{job['id']}")
+    assert detail.json()["status"] == "completed"
+    assert detail.json()["num_processed"] == 4
+
+
+def test_upload_images(auth_client):
+    import io
+
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGB", (32, 32), (10, 120, 10)).save(buf, format="PNG")
+    buf.seek(0)
+    r = auth_client.post(
+        "/api/jobs/upload",
+        files={"files": ("cell.png", buf, "image/png")},
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["num_images"] == 1
+
+
+def test_upload_rejects_non_image(auth_client):
+    r = auth_client.post(
+        "/api/jobs/upload",
+        files={"files": ("notes.txt", b"hello", "text/plain")},
+    )
+    assert r.status_code == 400
+
+
 def test_storage_and_tier_endpoints(auth_client):
     assert auth_client.get("/api/user/storage").status_code == 200
     tl = auth_client.get("/api/user/tier-limits")

@@ -16,7 +16,7 @@ import { ModuleLibrary } from "@/components/Pipeline/ModuleLibrary";
 import { ModuleNode, type ModuleNodeData } from "@/components/Pipeline/ModuleNode";
 import { ParameterPanel } from "@/components/Pipeline/ParameterPanel";
 import { LoadingSpinner } from "@/components/Shared/LoadingSpinner";
-import { useSubmitJob } from "@/hooks/useJobs";
+import { useDemoImages, useSubmitJob, useUploadImages } from "@/hooks/useJobs";
 import {
   useCreatePipeline,
   useModules,
@@ -39,8 +39,12 @@ export function PipelineBuilderPage() {
   const createMut = useCreatePipeline();
   const updateMut = useUpdatePipeline(id ?? "");
   const submitJob = useSubmitJob();
+  const uploadImages = useUploadImages();
+  const demoImages = useDemoImages();
 
   const [name, setName] = useState("Untitled Pipeline");
+  const [runOpen, setRunOpen] = useState(false);
+  const [runError, setRunError] = useState<string | null>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState<ModuleNodeData>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -147,20 +151,56 @@ export function PipelineBuilderPage() {
     }
   };
 
-  const run = async () => {
-    await save();
-    const pid = savedId ?? id;
-    if (!pid) return;
-    const folder = prompt(
-      "Server-side folder of images to process:",
-      "./data/uploads",
-    );
-    if (!folder) return;
-    submitJob.mutate(
-      { pipeline_id: pid, input_folder_path: folder },
-      { onSuccess: (job) => navigate(`/jobs/${job.id}`) },
-    );
+  // Save the pipeline, turn an image source into a folder, then submit the job.
+  const launchJob = async (folder: string) => {
+    setRunError(null);
+    try {
+      await save();
+      const pid = savedId ?? id;
+      if (!pid) throw new Error("Save the pipeline first");
+      const job = await submitJob.mutateAsync({
+        pipeline_id: pid,
+        input_folder_path: folder,
+      });
+      setRunOpen(false);
+      navigate(`/jobs/${job.id}`);
+    } catch (err) {
+      setRunError(
+        (err as { response?: { data?: { detail?: string } } })?.response?.data
+          ?.detail ?? (err as Error).message ?? "Failed to start job",
+      );
+    }
   };
+
+  const runWithFiles = async (fileList: FileList | null) => {
+    if (!fileList || fileList.length === 0) return;
+    setRunError(null);
+    try {
+      const src = await uploadImages.mutateAsync(Array.from(fileList));
+      await launchJob(src.input_folder_path);
+    } catch (err) {
+      setRunError(
+        (err as { response?: { data?: { detail?: string } } })?.response?.data
+          ?.detail ?? "Upload failed",
+      );
+    }
+  };
+
+  const runWithDemo = async () => {
+    setRunError(null);
+    try {
+      const src = await demoImages.mutateAsync(6);
+      await launchJob(src.input_folder_path);
+    } catch (err) {
+      setRunError(
+        (err as { response?: { data?: { detail?: string } } })?.response?.data
+          ?.detail ?? "Could not generate demo images",
+      );
+    }
+  };
+
+  const runBusy =
+    uploadImages.isPending || demoImages.isPending || submitJob.isPending;
 
   if (modulesQ.isLoading) return <LoadingSpinner label="Loading modules…" />;
 
@@ -181,8 +221,11 @@ export function PipelineBuilderPage() {
         </button>
         <button
           className="btn-secondary"
-          onClick={run}
-          disabled={submitJob.isPending || nodes.length === 0}
+          onClick={() => {
+            setRunError(null);
+            setRunOpen(true);
+          }}
+          disabled={nodes.length === 0}
         >
           Run job
         </button>
@@ -190,6 +233,79 @@ export function PipelineBuilderPage() {
           {nodes.length} modules · {edges.length} connections
         </span>
       </div>
+
+      {runOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+          onClick={() => !runBusy && setRunOpen(false)}
+        >
+          <div
+            className="card w-full max-w-md"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-lg font-semibold">Run pipeline</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Choose the images to process. Your pipeline is saved before the
+              job starts.
+            </p>
+
+            <div className="mt-4 space-y-3">
+              <label className="label">Upload your own images</label>
+              <input
+                type="file"
+                multiple
+                accept=".png,.jpg,.jpeg,.tif,.tiff,.bmp"
+                disabled={runBusy}
+                className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-brand-600 file:px-3 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-brand-700"
+                onChange={(e) => runWithFiles(e.target.files)}
+              />
+
+              <div className="flex items-center gap-3 py-1 text-xs text-slate-400">
+                <span className="h-px flex-1 bg-slate-200" />
+                or
+                <span className="h-px flex-1 bg-slate-200" />
+              </div>
+
+              <button
+                className="btn-primary w-full"
+                onClick={runWithDemo}
+                disabled={runBusy}
+              >
+                {demoImages.isPending
+                  ? "Generating demo images…"
+                  : "Use 6 demo images"}
+              </button>
+              <p className="text-xs text-slate-400">
+                Demo images are synthetic fluorescence cells — great for trying a
+                pipeline end-to-end without your own data.
+              </p>
+            </div>
+
+            {runBusy && (
+              <p className="mt-3 text-sm text-brand-600">
+                {uploadImages.isPending
+                  ? "Uploading…"
+                  : submitJob.isPending
+                    ? "Starting job…"
+                    : "Working…"}
+              </p>
+            )}
+            {runError && (
+              <p className="mt-3 text-sm text-red-600">{runError}</p>
+            )}
+
+            <div className="mt-5 flex justify-end">
+              <button
+                className="btn-secondary"
+                onClick={() => setRunOpen(false)}
+                disabled={runBusy}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-1 overflow-hidden rounded-xl border border-slate-200">
         <ModuleLibrary

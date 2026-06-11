@@ -32,9 +32,12 @@ data/uploads/*
 data/results/*
 !data/uploads/.gitkeep
 !data/results/.gitkeep
+# runtime data when running from the repo root (backend/ is a subdir)
+backend/data/
 models/classifiers/*.pkl
 models/classifiers/*.joblib
 *.sqlite3
+*.db
 *.db
 
 # --- OS / editors ---

@@ -99,6 +99,14 @@ class JobCreate(BaseModel):
     )
 
 
+class ImageSourceOut(BaseModel):
+    """Result of uploading images or generating a demo set: a server-side
+    folder the caller then passes to ``POST /api/jobs``."""
+
+    input_folder_path: str
+    num_images: int
+
+
 class JobOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
