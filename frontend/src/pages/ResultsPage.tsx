@@ -117,38 +117,60 @@ export function ResultsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Results</h1>
-        <div className="flex gap-3">
-          <button className="btn-secondary" onClick={downloadZip}>
-            Download ZIP
-          </button>
-          <Link to={`/jobs/${id}`} className="btn-secondary">
-            Back to job
-          </Link>
+      <div className="overflow-hidden rounded-xl bg-gradient-to-r from-brand-700 to-brand-500 px-6 py-7 text-white shadow-card">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="font-heading text-2xl font-bold tracking-tight text-white">
+              Analysis results
+            </h1>
+            <p className="mt-1 text-sm text-brand-100">
+              Annotated images, distributions, and per-cell measurements for this job.
+            </p>
+          </div>
+          <div className="flex gap-3">
+            <button
+              className="btn bg-white/15 text-white ring-1 ring-inset ring-white/30 backdrop-blur hover:bg-white/25"
+              onClick={downloadZip}
+            >
+              Download ZIP
+            </button>
+            <Link
+              to={`/jobs/${id}`}
+              className="btn bg-white text-brand-700 shadow-sm hover:bg-brand-50"
+            >
+              Back to job
+            </Link>
+          </div>
         </div>
       </div>
 
       {gallery.length > 0 && (
         <div className="card">
-          <h3 className="mb-3 font-semibold">
-            Annotated images{" "}
-            <span className="text-sm font-normal text-slate-400">
-              (yellow outlines = detected cells, red dots = centroids)
-            </span>
+          <h3 className="font-heading text-lg font-semibold text-slate-900">
+            Annotated images
           </h3>
+          <p className="mb-4 text-sm text-slate-500">
+            Yellow outlines = detected cells, red dots = centroids.
+          </p>
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
             {gallery.map((r) => (
-              <figure key={r.id} className="space-y-1">
+              <figure
+                key={r.id}
+                className="group overflow-hidden rounded-xl border border-slate-200 bg-slate-50 shadow-card transition-shadow hover:shadow-card-hover"
+              >
                 <AuthImage
                   path={`/api/jobs/${id}/results/${r.id}/image`}
                   alt={`Annotated ${r.image_filename}`}
-                  className="w-full rounded-md border border-slate-200"
+                  className="aspect-square w-full bg-white object-cover"
                 />
-                <figcaption className="truncate text-xs text-slate-500">
-                  {r.image_filename}
+                <figcaption className="space-y-0.5 border-t border-slate-200 px-3 py-2">
+                  <span className="block truncate text-xs font-medium text-slate-700">
+                    {r.image_filename}
+                  </span>
                   {typeof r.metrics?.aggregate?.cell_count === "number" && (
-                    <> · {r.metrics.aggregate.cell_count} cells</>
+                    <span className="badge bg-brand-50 text-brand-700">
+                      {r.metrics.aggregate.cell_count} cells
+                    </span>
                   )}
                 </figcaption>
               </figure>
@@ -159,15 +181,17 @@ export function ResultsPage() {
 
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="card">
-          <h3 className="mb-3 font-semibold">Mean intensity distribution</h3>
+          <h3 className="mb-4 font-heading text-lg font-semibold text-slate-900">
+            Mean intensity distribution
+          </h3>
           {histogram.length ? (
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={histogram}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="bin" fontSize={11} />
-                <YAxis fontSize={11} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis dataKey="bin" fontSize={11} stroke="#94a3b8" />
+                <YAxis fontSize={11} stroke="#94a3b8" />
                 <Tooltip />
-                <Bar dataKey="count" fill="#6366f1" />
+                <Bar dataKey="count" fill="#2563eb" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           ) : (
@@ -175,15 +199,22 @@ export function ResultsPage() {
           )}
         </div>
         <div className="card">
-          <h3 className="mb-3 font-semibold">Area vs intensity</h3>
+          <h3 className="mb-4 font-heading text-lg font-semibold text-slate-900">
+            Area vs intensity
+          </h3>
           {scatter.length ? (
             <ResponsiveContainer width="100%" height={220}>
               <ScatterChart>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="area" name="area" fontSize={11} />
-                <YAxis dataKey="intensity" name="intensity" fontSize={11} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis dataKey="area" name="area" fontSize={11} stroke="#94a3b8" />
+                <YAxis
+                  dataKey="intensity"
+                  name="intensity"
+                  fontSize={11}
+                  stroke="#94a3b8"
+                />
                 <Tooltip cursor={{ strokeDasharray: "3 3" }} />
-                <Scatter data={scatter} fill="#4f46e5" />
+                <Scatter data={scatter} fill="#1d4ed8" />
               </ScatterChart>
             </ResponsiveContainer>
           ) : (
@@ -192,49 +223,79 @@ export function ResultsPage() {
         </div>
       </div>
 
-      <div className="card overflow-x-auto">
-        <h3 className="mb-3 font-semibold">
-          Result rows{" "}
-          <span className="text-sm font-normal text-slate-400">
-            (showing {sorted.length} of {rows.length})
+      <div className="card p-0">
+        <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-4">
+          <h3 className="font-heading text-lg font-semibold text-slate-900">
+            Result rows
+          </h3>
+          <span className="badge bg-slate-100 text-slate-600">
+            showing {sorted.length} of {rows.length}
           </span>
-        </h3>
-        <table className="w-full text-left text-sm">
-          <thead>
-            <tr className="border-b border-slate-200 text-slate-500">
-              {columns.map((c) => (
-                <th
-                  key={c}
-                  className="cursor-pointer px-2 py-2 hover:text-slate-900"
-                  onClick={() => {
-                    if (sortKey === c) setAsc(!asc);
-                    else {
-                      setSortKey(c);
-                      setAsc(true);
-                    }
-                  }}
-                >
-                  {c} {sortKey === c ? (asc ? "▲" : "▼") : ""}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {sorted.map((r, i) => (
-              <tr key={i} className="border-b border-slate-100">
-                {columns.map((c) => (
-                  <td key={c} className="px-2 py-1.5">
-                    {typeof r[c] === "number"
-                      ? (r[c] as number).toLocaleString(undefined, {
-                          maximumFractionDigits: 2,
-                        })
-                      : String(r[c] ?? "")}
-                  </td>
-                ))}
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-y border-slate-200 bg-slate-50">
+                {columns.map((c) => {
+                  const active = sortKey === c;
+                  return (
+                    <th
+                      key={c}
+                      className="sticky top-0 cursor-pointer select-none whitespace-nowrap bg-slate-50 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500 transition-colors hover:text-brand-700"
+                      onClick={() => {
+                        if (sortKey === c) setAsc(!asc);
+                        else {
+                          setSortKey(c);
+                          setAsc(true);
+                        }
+                      }}
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        {c}
+                        <span
+                          className={
+                            active ? "text-brand-600" : "text-slate-300"
+                          }
+                        >
+                          {active ? (asc ? "▲" : "▼") : "↕"}
+                        </span>
+                      </span>
+                    </th>
+                  );
+                })}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {sorted.map((r, i) => (
+                <tr
+                  key={i}
+                  className="border-b border-slate-100 odd:bg-white even:bg-slate-50/50 transition-colors hover:bg-brand-50/60"
+                >
+                  {columns.map((c) => {
+                    const active = sortKey === c;
+                    const isNum = typeof r[c] === "number";
+                    return (
+                      <td
+                        key={c}
+                        className={`whitespace-nowrap px-4 py-2 ${
+                          isNum
+                            ? "text-right font-mono tabular-nums text-slate-700"
+                            : "text-slate-600"
+                        } ${active ? "font-medium text-slate-900" : ""}`}
+                      >
+                        {isNum
+                          ? (r[c] as number).toLocaleString(undefined, {
+                              maximumFractionDigits: 2,
+                            })
+                          : String(r[c] ?? "")}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
