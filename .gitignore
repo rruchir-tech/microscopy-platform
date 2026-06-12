@@ -1,0 +1,51 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.venv/
+venv/
+env/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# --- Node / Frontend ---
+node_modules/
+dist/
+dist-ssr/
+*.local
+.vite/
+coverage/
+playwright-report/
+test-results/
+
+# --- Env / secrets ---
+.env
+.env.*
+!.env.example
+
+# --- Data / runtime ---
+data/uploads/*
+data/results/*
+!data/uploads/.gitkeep
+!data/results/.gitkeep
+# runtime data when running from the repo root (backend/ is a subdir)
+backend/data/
+models/classifiers/*.pkl
+models/classifiers/*.joblib
+*.sqlite3
+*.db
+*.db
+
+# --- OS / editors ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log
+
+# TS incremental build cache
+*.tsbuildinfo

@@ -1,0 +1,19 @@
+# Render Blueprint for MicroCount (single Docker service: API + built SPA).
+# NOTE: deployment is deferred — this is a starting point, not yet validated on
+# Render. SQLite on the container filesystem is ephemeral (reset on each
+# deploy); attach a persistent disk or move to managed Postgres before relying
+# on stored results.
+services:
+  - type: web
+    name: microcount
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    region: oregon
+    envVars:
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CELERY_TASK_ALWAYS_EAGER
+        value: "true"
+      - key: DATABASE_URL
+        value: sqlite:///./data/app.db
