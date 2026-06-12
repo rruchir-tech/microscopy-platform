@@ -6,29 +6,47 @@
   color-scheme: light;
 }
 
-body {
-  @apply bg-slate-50 text-slate-900 antialiased;
-  margin: 0;
+@layer base {
+  body {
+    @apply bg-slate-50 font-sans text-slate-900 antialiased;
+    margin: 0;
+  }
+  h1,
+  h2,
+  h3 {
+    @apply font-heading tracking-tight;
+  }
 }
 
-.btn {
-  @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50;
-}
-.btn-primary {
-  @apply btn bg-brand-600 text-white hover:bg-brand-700;
-}
-.btn-secondary {
-  @apply btn border border-slate-300 bg-white text-slate-700 hover:bg-slate-100;
-}
-.btn-danger {
-  @apply btn bg-red-600 text-white hover:bg-red-700;
-}
-.card {
-  @apply rounded-xl border border-slate-200 bg-white p-5 shadow-sm;
-}
-.input {
-  @apply w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100;
-}
-.label {
-  @apply mb-1 block text-sm font-medium text-slate-700;
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply btn bg-brand-600 text-white shadow-sm hover:bg-brand-700 active:bg-brand-800;
+  }
+  .btn-secondary {
+    @apply btn border border-slate-300 bg-white text-slate-700 hover:border-slate-400 hover:bg-slate-50;
+  }
+  .btn-accent {
+    @apply btn bg-accent-600 text-white shadow-sm hover:bg-accent-700;
+  }
+  .btn-danger {
+    @apply btn bg-red-600 text-white hover:bg-red-700;
+  }
+  .card {
+    @apply rounded-xl border border-slate-200 bg-white p-5 shadow-card transition-shadow;
+  }
+  .card-interactive {
+    @apply card hover:border-slate-300 hover:shadow-card-hover;
+  }
+  .input {
+    @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100 placeholder:text-slate-400;
+  }
+  .label {
+    @apply mb-1 block text-sm font-medium text-slate-700;
+  }
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
 }

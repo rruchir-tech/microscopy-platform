@@ -18,24 +18,56 @@ export function DashboardPage() {
   const templates = useTemplates();
   const instantiate = useInstantiateTemplate();
 
+  const jobList = jobs.data ?? [];
+  const completed = jobList.filter((j) => j.status === "completed").length;
+  const running = jobList.filter(
+    (j) => j.status === "queued" || j.status === "processing",
+  ).length;
+
   return (
     <div className="space-y-8">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">
-            Welcome back{user ? `, ${user.username}` : ""} 👋
-          </h1>
-          <p className="text-slate-500">
-            Build pipelines, run batch jobs, export results.
-          </p>
+      <div className="overflow-hidden rounded-2xl bg-gradient-to-br from-brand-700 to-brand-500 p-6 text-white shadow-lg shadow-brand-600/20 sm:p-8">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h1 className="font-heading text-2xl font-semibold tracking-tight sm:text-3xl">
+              Welcome back{user ? `, ${user.username}` : ""}
+            </h1>
+            <p className="mt-1 max-w-md text-sm text-brand-50/90">
+              Upload microscopy images, pick what to measure, and export
+              publication-ready results — no code.
+            </p>
+          </div>
+          <div className="flex gap-3">
+            <Link
+              to="/pipelines/new"
+              className="btn border border-white/30 bg-white/10 text-white hover:bg-white/20"
+            >
+              Advanced builder
+            </Link>
+            <Link
+              to="/analyze"
+              className="btn bg-white font-semibold text-brand-700 shadow-sm hover:bg-brand-50"
+            >
+              + New analysis
+            </Link>
+          </div>
         </div>
-        <div className="flex gap-3">
-          <Link to="/pipelines/new" className="btn-secondary">
-            Advanced builder
-          </Link>
-          <Link to="/analyze" className="btn-primary">
-            + New Analysis
-          </Link>
+        <div className="mt-6 grid grid-cols-3 gap-3">
+          {[
+            { label: "Pipelines", value: pipelines.data?.length ?? 0 },
+            { label: "Completed", value: completed },
+            { label: "Running", value: running },
+          ].map((s) => (
+            <div
+              key={s.label}
+              className="rounded-xl bg-white/10 px-4 py-3 backdrop-blur-sm"
+            >
+              <div className="font-heading text-2xl font-semibold">
+                {s.value}
+              </div>
+              <div className="text-xs text-brand-50/80">{s.label}</div>
+            </div>
+          ))}
         </div>
       </div>
 
